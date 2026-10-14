@@ -785,7 +785,8 @@ static unsigned long WriteEntryTable( void )
                 bundle_item.f.info = (start->iopl_words << IOPL_WORD_SHIFT);
                 if( start->isexported ) {
                     bundle_item.f.info |= ENTRY_EXPORTED;
-                    if( FmtData.u.os2fam.flags & SHARABLE_DGROUP ) {
+                    // (a constant, segment 0xFE, uses no data segment: not marked shared)
+                    if( (FmtData.u.os2fam.flags & SHARABLE_DGROUP) && start->addr.seg != 0xFE ) {
                         bundle_item.f.info |= ENTRY_SHARED;
                     }
                 }
@@ -899,6 +900,13 @@ void ChkOS2Exports( void )
                     // MN: Create a forwarder - add a special flag?
                     // Currently WriteFlatEntryTable() in loadflat.c will
                     // recognize a forwarder by segment == 0xFFFF
+                } else if( (FmtData.type & MK_NE)
+                  && !IS_SYM_IMPORTED( sym ) ) {
+                    // An absolute symbol (an EQU made public) is exported as a
+                    // constant: the NE entry table's segment number 0xFE. This
+                    // is how KERNEL exports __AHINCR, __0040H and the like.
+                    exp->addr.seg = 0xFE;
+                    exp->addr.off = sym->addr.off;
                 } else {
                     LnkMsg( ERR+MSG_CANT_EXPORT_ABSOLUTE, "S", sym );
                 }
