@@ -786,7 +786,7 @@ static unsigned long WriteEntryTable( void )
                 if( start->isexported ) {
                     bundle_item.f.info |= ENTRY_EXPORTED;
                     // (a constant, segment 0xFE, uses no data segment: not marked shared)
-                    if( (FmtData.u.os2fam.flags & SHARABLE_DGROUP) && start->addr.seg != 0xFE ) {
+                    if( (FmtData.u.os2fam.flags & SHARABLE_DGROUP) && start->addr.seg != 0xFE && !start->isnodata ) {
                         bundle_item.f.info |= ENTRY_SHARED;
                     }
                 }
@@ -1146,7 +1146,9 @@ void FiniOS2LoadFile( void )
     } else {
         adseg = 0;    // no automatic data segment.
     }
-    if( (FmtData.type & MK_WIN_NE)
+    if( FmtData.u.os2fam.flags & NO_APP_TYPE ) {
+        /* (CodeBreaker: as the original's header has it) */
+    } else if( (FmtData.type & MK_WIN_NE)
       || (FmtData.u.os2fam.flags & PM_APPLICATION) ) {
         exe_head.info |= OS2_PM_APP;
     } else if( FmtData.u.os2fam.flags & PM_NOT_COMPATIBLE ) {

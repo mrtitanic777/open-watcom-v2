@@ -42,6 +42,7 @@ typedef struct entry_export {
     boolbit             isfree      : 1;
     boolbit             isprivate   : 1;
     boolbit             isiopl      : 1;
+    boolbit             isnodata    : 1;    /* CodeBreaker: NODATA, the caller's data segment (no shared-data flag) */
     symbol              *sym;
     char                *impname;
     addr_type           addr;

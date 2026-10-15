@@ -75,6 +75,7 @@
 #define PHYS_DEVICE         0x0400
 #define VIRT_DEVICE         0x0800
 #define SHARABLE_DGROUP     0x1000
+#define NO_APP_TYPE         0x2000      /* CodeBreaker: no application type in the header (KRNL386's) */
 #define PM_NOT_COMPATIBLE   0x4000
 #define TERM_INSTANCE_FLAG  0x8000
 

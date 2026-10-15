@@ -255,6 +255,14 @@ static bool ProcProtMode( void )
     return( true );
 }
 
+static bool ProcNoAppType( void )
+/*******************************/
+/* CodeBreaker: the header says no application type (as KERNEL's does) */
+{
+    FmtData.u.os2fam.flags |= NO_APP_TYPE;
+    return( true );
+}
+
 static bool ProcNoStdCall( void )
 /*******************************/
 {
@@ -382,6 +390,7 @@ static parse_entry  MainOptions[] = {
     "MODName",              ProcModName,                MK_NE | MK_OS2_FLAT | MK_PE | MK_WIN_VXD,   0,
     "NEWFiles",             ProcNewFiles,               MK_OS2_NE,                                  0,
     "PROTmode",             ProcProtMode,               MK_NE,                                      0,
+    "NOAPPType",            ProcNoAppType,              MK_NE,                                      0,
     "NOSTDCall",            ProcNoStdCall,              MK_PE,                                      0,
     "RWReloccheck",         ProcRWRelocCheck,           MK_WIN_NE,                                  0,
     "SELFrelative",         ProcSelfRelative,           MK_OS2_LX,                                  0,
@@ -533,8 +542,17 @@ static bool ProcPrivate( void )
     return( true );
 }
 
+static bool ProcExpNoData( void )
+/*******************************/
+/* CodeBreaker: NODATA, as in a .def file -- the export keeps its caller's data segment */
+{
+    FmtData.u.os2fam.exports->isnodata = true;
+    return( true );
+}
+
 static parse_entry  Exp_Keywords[] = {
     "RESident",     ProcExpResident,    MK_NE | MK_OS2_FLAT, 0,
+    "NODATA",       ProcExpNoData,      MK_NE, 0,
     "PRIVATE",      ProcPrivate,        MK_NE | MK_OS2_FLAT | MK_PE, 0,
     NULL
 };
@@ -1312,6 +1330,14 @@ static bool ProcVirtDevice( void )
 static parse_entry  WindowsFormatOptions[] = {
     "MEMory",       ProcMemory,         MK_WIN_NE,              0,
     "FOnt",         ProcFont,           MK_WIN_NE,              0,
+    /*
+     * VxD module type override: static(0x28000)/dynamic(0x38000) is a build-time
+     * property (not derivable from the DDB), so allow it on `format windows vxd'.
+     * VIRTdevice -> dynamic (VXDLDR-loadable), PHYSdevice -> static.  Default is
+     * the DDB-driven choice (see loadflat.c), which is static for boot VxDs.
+     */
+    "VIRTdevice",   ProcVirtDevice,     MK_WIN_VXD,             0,
+    "PHYSdevice",   ProcPhysDevice,     MK_WIN_VXD,             0,
     NULL
 };
 
@@ -1375,7 +1401,7 @@ bool ProcWindowsFormat( void )
     FmtData.def_ext = E_LOAD;
     ProcOne( WindowsFormats, SEP_NO );
     ProcOne( WindowsSubFormats, SEP_NO );
-    if( FmtData.type & MK_WIN_NE ) {
+    if( FmtData.type & (MK_WIN_NE | MK_WIN_VXD) ) {
         while( ProcOne( WindowsFormatOptions, SEP_NO ) ) {
             /* nothing */;
         }
