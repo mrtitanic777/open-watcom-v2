@@ -122,6 +122,7 @@ extern cg_name *CGDuplicate(cg_name _1) { return( TwoZeroes ); }
 extern void DGLabel(bck_info *_4) {}
 extern void DGBackPtr(bck_info * _1,segment_id _2,int_32 _3,cg_type _4) {}
 extern void DGFEPtr(sym_handle _1,cg_type _2,int_32 _4) {}
+extern void DGFEPtrBase(sym_handle _1) {}
 extern void DGInteger(uint_32 _1,cg_type _4) {}
 extern void DGFloat(char *_1,cg_type _4) {}
 extern void DGChar(char _4) {}

@@ -1467,6 +1467,17 @@ void _CGAPI DGFEPtr( cg_sym_handle sym, cg_type tipe, int_32 offset )
     FEPtr( sym, TypeAddress( tipe ), offset );
 }
 
+void _CGAPI DGFEPtrBase( cg_sym_handle sym )
+/******************************************/
+/* CodeBreaker: the selector of the symbol's segment, a word the loader fills in */
+{
+#ifdef DEVBUILD
+    EchoAPI( "DGFEPtrBase( %S )\n", sym );
+#endif
+    DGBlip();
+    FEPtrBase( sym );
+}
+
 void _CGAPI     DGBytes( uint_32 len, const void *src )
 /*****************************************************/
 {

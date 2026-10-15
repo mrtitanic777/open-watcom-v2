@@ -543,6 +543,61 @@ static void StorePointer( TYPEPTR typ, target_size size )
     dq.type = QDT_ID;
     dq.u.var.sym_handle = SYM_NULL;
     dq.u.var.offset = 0;
+#if _CPU == 8086
+    /*
+     * CodeBreaker: a __segment initialized with the segment of an object or a function,
+     * `(__segment)&sym` -- the selector the loader fills in (a segment fixup), as the
+     * original's data holds it
+     */
+    if( (typ->type_flags & TF2_TYP_SEGMENT) && CurToken != T_RIGHT_BRACE ) {
+        TREEPTR     opnd;
+
+        tree = AddrExpr();
+        tree = InitAsgn( typ, tree );
+        for( opnd = tree; opnd->op.opr == OPR_CONVERT || opnd->op.opr == OPR_CONVERT_SEG; ) {
+            if( opnd->op.opr == OPR_CONVERT_SEG ) {
+                opnd = opnd->right;
+                break;
+            }
+            opnd = opnd->right;
+        }
+        if( tree->op.opr == OPR_CONVERT_SEG || opnd != tree ) {
+            info.offset = 0;
+            info.u.sym_h = SYM_NULL;
+            info.addr_set = false;
+            info.state = IS_VALUE;
+            info.is_str = false;
+            info.is_error = false;
+            AddrFold( opnd, &info );
+            if( !info.is_error && !info.is_str && info.state != IS_VALUE && info.u.sym_h != SYM_NULL ) {
+                dq.flags |= Q_SEGMENT;
+                dq.u.var.sym_handle = info.u.sym_h;
+                GenDataQuad( &dq, size );
+                FreeExprTree( tree );
+                return;
+            }
+        }
+        /*
+         * otherwise a constant, as any integer
+         */
+        info.offset = 0;
+        info.u.sym_h = SYM_NULL;
+        info.addr_set = false;
+        info.state = IS_VALUE;
+        info.is_str = false;
+        info.is_error = false;
+        AddrFold( tree, &info );
+        if( info.u.sym_h != SYM_NULL || info.is_error || info.is_str ) {
+            if( tree->op.opr != OPR_ERROR ) {
+                CErr1( ERR_NOT_A_CONSTANT_EXPR );
+            }
+        } else {
+            StoreIValue( typ->decl_type, info.offset, size );
+        }
+        FreeExprTree( tree );
+        return;
+    }
+#endif
     if( CurToken != T_RIGHT_BRACE ) {
         tree = AddrExpr();
         tree = InitAsgn( typ, tree ); // as if we are assigning

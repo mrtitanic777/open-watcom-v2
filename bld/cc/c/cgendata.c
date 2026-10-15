@@ -70,7 +70,9 @@ target_size GetDQuadPointerSize( enum quad_flags dq_flags )
 
     size = TARGET_POINTER;
 #if _INTEL_CPU
-    if( dq_flags & Q_NEAR_POINTER ) {
+    if( dq_flags & Q_SEGMENT ) {                /* CodeBreaker: a selector */
+        size = TARGET_SHORT;
+    } else if( dq_flags & Q_NEAR_POINTER ) {
         size = TARGET_NEAR_POINTER;
     } else if( dq_flags & Q_FAR_POINTER ) {
         size = TARGET_FAR_POINTER;
@@ -219,6 +221,10 @@ static void EmitDQuad( DATA_QUAD *dq )
         data_type = GetDQuadPointerCGType( dq->flags );
         if( dq->u.var.sym_handle == SYM_NULL ) {
             DGInteger( dq->u.var.offset, data_type );
+#if _INTEL_CPU
+        } else if( dq->flags & Q_SEGMENT ) {    /* CodeBreaker: the selector of the symbol's segment */
+            DGFEPtrBase( (CGSYM_HANDLE)dq->u.var.sym_handle );
+#endif
         } else {
             DGFEPtr( (CGSYM_HANDLE)dq->u.var.sym_handle, data_type, dq->u.var.offset );
         }

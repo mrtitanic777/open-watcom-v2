@@ -432,6 +432,7 @@ enum quad_flags {           /* code data */
     Q_NEAR_POINTER  = 0x08, /*       Y08   near T_ID */
     Q_FAR_POINTER   = 0x10, /*       Y10   far T_ID */
     Q_CODE_POINTER  = 0x20, /*       Y20   function name */
+    Q_SEGMENT       = 0x40, /*       Y40   the selector of T_ID's segment (CodeBreaker) */
     Q_REPEATED_DATA = 0x80, /*       Y80   repeated data item */
     Q_NULL          = 0x00
 };
