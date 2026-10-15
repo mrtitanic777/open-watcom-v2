@@ -263,6 +263,17 @@ static bool ProcNoAppType( void )
     return( true );
 }
 
+static bool ProcSelectorFixups( void )
+/************************************/
+/* CodeBreaker: a reference to a place in the module itself as the segment's number -- never
+ * through the entry table, movable segment or not -- and a far pointer to one as its offset,
+ * written in, with only its selector left to the loader (as KRNL386 has them: it relocates
+ * itself before there is an entry table to go through) */
+{
+    FmtData.u.os2fam.selector_fixups = true;
+    return( true );
+}
+
 static bool ProcNoStdCall( void )
 /*******************************/
 {
@@ -391,6 +402,7 @@ static parse_entry  MainOptions[] = {
     "NEWFiles",             ProcNewFiles,               MK_OS2_NE,                                  0,
     "PROTmode",             ProcProtMode,               MK_NE,                                      0,
     "NOAPPType",            ProcNoAppType,              MK_NE,                                      0,
+    "SELECTORFixups",       ProcSelectorFixups,         MK_NE,                                      0,
     "NOSTDCall",            ProcNoStdCall,              MK_PE,                                      0,
     "RWReloccheck",         ProcRWRelocCheck,           MK_WIN_NE,                                  0,
     "SELFrelative",         ProcSelfRelative,           MK_OS2_LX,                                  0,

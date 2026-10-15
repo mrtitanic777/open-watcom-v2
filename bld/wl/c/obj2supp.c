@@ -1403,7 +1403,19 @@ static bool formatBaseReloc( fix_relo_data *fix, target_spec *target, segdata *s
                     break;
                 }
             }
-            if( ( group != NULL )
+            if( FmtData.u.os2fam.selector_fixups ) {
+                /* CodeBreaker: by the segment's number; a far pointer's offset written in */
+                os2item->put.internal.grp_num = target_addr.seg;
+                os2item->put.internal.off = 0;
+                if( os2item->fixtype == OSF_SOURCE_PTR_32 && !fix->additive ) {
+                    MPUT_16_UN( fixptr, target_addr.off );
+                    fixptr += 2;
+                    os2item->reloc_offset += 2;
+                    os2item->fixtype = OSF_SOURCE_SEG;
+                } else if( os2item->fixtype != OSF_SOURCE_SEG ) {
+                    os2item->put.internal.off = target_addr.off;
+                }
+            } else if( ( group != NULL )
               && (group->segflags & SEG_MOVABLE) ) {
                 os2item->put.internal.grp_num = MOVABLE_ENTRY_PNT;
                 os2item->put.internal.off = FindEntryOrdinal( target_addr, group );

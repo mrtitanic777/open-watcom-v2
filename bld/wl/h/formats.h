@@ -116,6 +116,7 @@ struct fmt_os2fam_data {
     boolbit                 is_private_dll : 1;
     boolbit                 no_stub        : 1;
     boolbit                 mixed1632      : 1;
+    boolbit                 selector_fixups : 1;    // CodeBreaker: see OPTION SELECTORFIXUPS
 };
 
 // linker specific OS/2 data
