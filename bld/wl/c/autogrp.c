@@ -121,6 +121,18 @@ static seg_leader *GetNextSeg( section *sect, seg_leader *seg )
 static bool CanPack( seg_leader *seg1, seg_leader *seg2 )
 /*******************************************************/
 {
+    if( FmtData.type & MK_WIN_VXD ) {
+        // A VxD's LE objects are grouped BY CLASS, exactly as MS LINK does: the
+        // DDK gives every locked segment (_LTEXT/_LDATA/_TEXT/_DATA/_BSS/CONST)
+        // the class 'LCODE', so they merge into one locked object (obj1, holding
+        // the code + DDB + service table), while INIT ('ICODE') and each pageable
+        // message segment get their own class and stay separate. Retail VKD =
+        // 10 objects that way. Packing UNRELATED flat segments (as the OS/2-flat
+        // default does) collapsed VKD to 2 objects and diverged VMM's device-init;
+        // never-packing over-split it to 11 (DDB/table in their own object). Pack
+        // iff same class -> reproduces the retail per-class object layout.
+        return( seg1->class == seg2->class );
+    }
     if( seg1->info & SEGINF_CODE ) {
         if( seg2->combine == COMBINE_INVALID ) {
             return( false );

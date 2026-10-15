@@ -263,6 +263,15 @@ static bool ProcNoAppType( void )
     return( true );
 }
 
+static bool ProcStubVerbatim( void )
+/**********************************/
+/* CodeBreaker: the stub as it is, its header too (KRNL386's real-mode start steps back over
+ * a header of exactly 20h paragraphs) -- only its NE offset (3Ch) is filled in */
+{
+    FmtData.u.os2fam.stub_verbatim = true;
+    return( true );
+}
+
 static bool ProcSelectorFixups( void )
 /************************************/
 /* CodeBreaker: a reference to a place in the module itself as the segment's number -- never
@@ -403,6 +412,7 @@ static parse_entry  MainOptions[] = {
     "PROTmode",             ProcProtMode,               MK_NE,                                      0,
     "NOAPPType",            ProcNoAppType,              MK_NE,                                      0,
     "SELECTORFixups",       ProcSelectorFixups,         MK_NE,                                      0,
+    "STUBVERBatim",         ProcStubVerbatim,           MK_NE,                                      0,
     "NOSTDCall",            ProcNoStdCall,              MK_PE,                                      0,
     "RWReloccheck",         ProcRWRelocCheck,           MK_WIN_NE,                                  0,
     "SELFrelative",         ProcSelfRelative,           MK_OS2_LX,                                  0,

@@ -701,7 +701,17 @@ static void setDefBase( void )
         FmtData.base = PE_DEFAULT_BASE;
         return;
     }
-    if( FmtData.type & (MK_OS2_FLAT | MK_WIN_VXD) ) {
+    if( FmtData.type & MK_WIN_VXD ) {
+        // A VxD is a position-independent flat module: VMM loads it at a linear
+        // address it chooses and applies the LE fixups, so its objects must be
+        // based at 0 (retail VxD objects all have reloc base 0). Using
+        // FLAT_GRANULARITY here based every object at 0x10000, which shifted every
+        // relocated pointer -- including the DDB service-table handlers -- by 64K,
+        // so a peer's first VxDCall into the driver jumped to garbage.
+        FmtData.base = 0;
+        return;
+    }
+    if( FmtData.type & MK_OS2_FLAT ) {
         FmtData.base = FLAT_GRANULARITY;
         return;
     }

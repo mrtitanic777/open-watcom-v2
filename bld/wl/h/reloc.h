@@ -184,6 +184,7 @@ extern void             FreeRelocInfo( void );
 extern unsigned         RelocSize( reloc_info reloclist );
 extern unsigned         DumpMaxRelocList( reloc_info *reloclist_head, unsigned );
 extern bool             DumpRelocList( reloc_info reloclist );
+extern void            CopyRelocList( reloc_info, void * );
 extern void             SetRelocSize( void );
 extern bool             SwapOutRelocs( void );
 extern void             ResetReloc( void );

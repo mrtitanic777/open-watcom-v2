@@ -117,6 +117,7 @@ struct fmt_os2fam_data {
     boolbit                 no_stub        : 1;
     boolbit                 mixed1632      : 1;
     boolbit                 selector_fixups : 1;    // CodeBreaker: see OPTION SELECTORFIXUPS
+    boolbit                 stub_verbatim : 1;      // CodeBreaker: see OPTION STUBVERBATIM
 };
 
 // linker specific OS/2 data

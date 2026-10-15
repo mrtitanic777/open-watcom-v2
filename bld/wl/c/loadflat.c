@@ -130,6 +130,15 @@ static unsigned WriteObjectTables( os2_flat_header *header, unsigned long loc )
         }
         objrec.size = group->totalsize;
         objrec.addr = group->linear;
+        if( FmtData.type & MK_WIN_VXD ) {
+            // A VxD's objects are relocated independently by VMM and referenced
+            // through (object,offset) fixups, so each object's LE base address
+            // must be 0 (as in every retail VxD). Emitting group->linear here
+            // gave the 2nd+ objects nonzero bases (0x2000, 0x3000, ...), which
+            // shifted their relocated code -- e.g. VKD's Define_Hot_Key handler
+            // that lives in object 2 -- so a peer's VxDCall into it faulted.
+            objrec.addr = 0;
+        }
         objrec.flags = 0;
         /*
          * segflags are in OS/2 V1.x format, we have to translate them
@@ -397,6 +406,17 @@ static unsigned WriteDataPages( unsigned long loc )
     return( last_page );
 }
 
+/*
+ * Whether the single exported DDB has DDB_DYNAMIC_VXD (bit 15) set.  Captured in
+ * SetHeaderVxDInfo (which already reads the DDB) and used when the module flags
+ * are chosen, so a dynamically-loadable VxD gets VXD_DEVICE_DRIVER_DYNAMIC and a
+ * static (boot-loaded) one gets VXD_DEVICE_DRIVER_STATIC -- matching Win95's own
+ * .vxd modules.  The PHYSdevice/VIRTdevice directives are not available in VxD
+ * format, so without this every VxD would emit the generic 3.x flags (0x8020).
+ */
+#define DDB_DYNAMIC_VXD     0x8000      /* DDB flags bit 15 */
+static bool VxDIsDynamic = false;
+
 static void SetHeaderVxDInfo( os2_flat_header *exe_head )
 /********************************************************
  * setup VxD specific info in the header
@@ -414,6 +434,7 @@ static void SetHeaderVxDInfo( os2_flat_header *exe_head )
         ReadInfo( (exp->sym->p.seg)->u1.vm_ptr + vm_off, &ddb, sizeof( ddb ) );
         exe_head->r.vxd.device_ID = ddb.req_device_number;
         exe_head->r.vxd.DDK_version = ddb.SDK_version;
+        VxDIsDynamic = ( ddb.flags & DDB_DYNAMIC_VXD ) != 0;
     }
 
 }
@@ -522,8 +543,12 @@ void FiniOS2FlatLoadFile( void )
             exe_head.flags |= VXD_DEVICE_DRIVER_DYNAMIC;
         } else if( FmtData.u.os2fam.flags & PHYS_DEVICE ) {
             exe_head.flags |= VXD_DEVICE_DRIVER_STATIC;
+        } else if( VxDIsDynamic ) {
+            /* DDB has DDB_DYNAMIC_VXD set -> dynamically loadable (VXDLDR) */
+            exe_head.flags |= VXD_DEVICE_DRIVER_DYNAMIC;
         } else {
-            exe_head.flags |= VXD_DEVICE_DRIVER_3x;
+            /* default: a normal static (boot-loaded) VxD, like Win95's own */
+            exe_head.flags |= VXD_DEVICE_DRIVER_STATIC;
         }
 //        exe_head.heapsize  = FmtData.u.os2fam.heapsize;
     } else { // OS/2 flags settings

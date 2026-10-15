@@ -371,6 +371,28 @@ unsigned DumpMaxRelocList( reloc_info *reloclist_head, unsigned max )
     return( total );
 }
 
+void CopyRelocList( reloc_info reloclist, void *buff )
+/******************************************************
+ * CodeBreaker: copy the reloc information stored here into buff (RelocSize bytes)
+ */
+{
+    unsigned        size;
+    char            *out;
+
+    out = buff;
+    for( ; reloclist != NULL; reloclist = reloclist->next ) {
+        size = RELOC_PAGE_SIZE - reloclist->sizeleft;
+        if( size ) {
+            if( reloclist->loc.spilled ) {
+                SpillRead( reloclist->loc.u.spill, 0, out, size );
+            } else {
+                memcpy( out, reloclist->loc.u.addr, size );
+            }
+            out += size;
+        }
+    }
+}
+
 bool DumpRelocList( reloc_info reloclist )
 /****************************************/
 {

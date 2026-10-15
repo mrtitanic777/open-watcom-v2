@@ -31,6 +31,7 @@
 ****************************************************************************/
 
 
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -253,7 +254,57 @@ static void AssignOrdinals( void )
     }
 }
 
-static unsigned long WriteOS2Relocs( group_entry *group )
+static unsigned long WriteChainedRelocs( group_entry *group, unsigned long seg_start, unsigned long relocsize )
+/***********************************************************************************************************
+ * CodeBreaker (OPTION SELECTORFIXUPS): a selector to a segment of the module, wherever it is
+ * wanted, is one record and a chain through the places -- each holds where the next is, the
+ * last 0FFFFh -- as the original linker wrote them (KRNL386 follows them itself)
+ */
+{
+    os2_reloc_item  *items;
+    unsigned long   n, i, j, kept, at;
+    unsigned_16     next;
+
+    n = relocsize / sizeof( os2_reloc_item );
+    items = malloc( relocsize );
+    CopyRelocList( group->g.reloclist, items );
+    kept = 0;
+    at = PosLoad();
+    for( i = 0; i < n; i++ ) {
+        if( items[i].fixtype == 0xFF )      /* (taken into an earlier chain) */
+            continue;
+        if( items[i].reloc_type == INTERNAL_REFERENCE && items[i].fixtype == OSF_SOURCE_SEG ) {
+            /* the others to the same segment, after this one, in its chain */
+            for( j = i + 1; j < n; j++ ) {
+                if( items[j].reloc_type == INTERNAL_REFERENCE && items[j].fixtype == OSF_SOURCE_SEG
+                  && items[j].put.internal.grp_num == items[i].put.internal.grp_num ) {
+                    break;
+                }
+            }
+            {
+                unsigned long   last = i;
+                for( ; j < n; j++ ) {
+                    if( items[j].reloc_type == INTERNAL_REFERENCE && items[j].fixtype == OSF_SOURCE_SEG
+                      && items[j].put.internal.grp_num == items[i].put.internal.grp_num ) {
+                        next = items[j].reloc_offset;
+                        SeekLoad( seg_start + items[last].reloc_offset );
+                        WriteLoad( &next, 2 );
+                        items[j].fixtype = 0xFF;
+                        last = j;
+                    }
+                }
+            }
+        }
+        items[kept++] = items[i];
+    }
+    SeekLoad( at );
+    WriteLoadU16( kept );
+    WriteLoad( items, kept * sizeof( os2_reloc_item ) );
+    free( items );
+    return( kept * sizeof( os2_reloc_item ) );
+}
+
+static unsigned long WriteOS2Relocs( group_entry *group, unsigned long seg_start )
 /********************************************************
  * write all relocs associated with group to the file
  */
@@ -265,6 +316,8 @@ static unsigned long WriteOS2Relocs( group_entry *group )
     relocnum = relocsize / sizeof( os2_reloc_item );
     if( relocnum == 0 )
         return( 0 );
+    if( FmtData.u.os2fam.selector_fixups )
+        return( WriteChainedRelocs( group, seg_start, relocsize ) );
     WriteLoadU16( relocnum );
     DumpRelocList( group->g.reloclist );
     return( relocsize );
@@ -301,7 +354,7 @@ static void WriteOS2Data( unsigned_32 stub_len, os2_exe_header *exe_head )
             segrec.address = (unsigned_16)seg_addr;
             WriteGroupLoad( group, false );
             NullAlign( 2 );         // segment must be even length
-            relocsize = WriteOS2Relocs( group );
+            relocsize = WriteOS2Relocs( group, off );
             if( relocsize != 0 ) {
                 segrec.info |= SEG_RELOC;
             }
@@ -1291,6 +1344,19 @@ unsigned_32 WriteStubFile( unsigned_32 stub_align )
         if( dosheader.signature != EXESIGN_DOS ) {
             LnkMsg( ERR + MSG_INV_STUB_FILE, NULL );
             stub_len = WriteDOSDefStub( stub_align );
+        } else if( FmtData.u.os2fam.stub_verbatim ) {
+            /* CodeBreaker: every byte as it is; only the NE header's offset filled in */
+            read_len = dosheader.file_size * 512ul - (-dosheader.mod_size & 0x1ff);
+            QSeek( the_file, 0, FmtData.u.os2fam.stub_file_name );
+            for( stub_len = 0; stub_len < read_len; stub_len += amount ) {
+                amount = ( read_len - stub_len < TokSize ) ? read_len - stub_len : TokSize;
+                QRead( the_file, TokBuff, amount, FmtData.u.os2fam.stub_file_name );
+                WriteLoad( TokBuff, amount );
+            }
+            stub_len = NullAlign( stub_align );
+            SeekLoad( NE_HEADER_OFFSET );
+            WriteLoadU32( stub_len );
+            SeekLoad( stub_len );
         } else {
             QSeek( the_file, dosheader.reloc_offset, FmtData.u.os2fam.stub_file_name );
             dosheader.reloc_offset = 0x40;
