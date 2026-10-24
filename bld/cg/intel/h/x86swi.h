@@ -56,4 +56,5 @@ CGSW_X86_STATEMENT_COUNTING      = 0x00400000,  /* Statement counting (-esp) */
 CGSW_X86_NULL_SELECTOR_BAD       = 0x00800000,  /* Avoid null selectors on i86 */
 CGSW_X86_P5_PROFILING_CTR0       = 0x01000000,  /* Use RDPMC instead of RDTSC */
 CGSW_X86_GEN_FWAIT_386           = 0x02000000,  /* Generate FWAITs on 386 and up */
+CGSW_X86_MSC8                    = 0x04000000,  /* Code shaped as Microsoft C/C++ 8.00c's (-zmsc) */
 

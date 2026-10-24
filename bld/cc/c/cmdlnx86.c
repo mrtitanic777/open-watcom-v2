@@ -343,6 +343,11 @@ static void setIntelArchitecture( OPT_STORAGE *data )
     if( data->zfw ) {
         TargetSwitches |= CGSW_X86_GEN_FWAIT_386;
     }
+#if _CPU == 8086
+    if( data->zmsc ) {
+        TargetSwitches |= CGSW_X86_MSC8;
+    }
+#endif
     switch( data->fp_rounding ) {
     case OPT_ENUM_fp_rounding_zri:
         GenSwitches |= CGSW_GEN_FPU_ROUNDING_INLINE;

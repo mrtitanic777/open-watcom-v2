@@ -1230,6 +1230,11 @@
 :usage. generate FWAIT instructions on 386 and later
 :jusage.
 
+:option. zmsc
+:target. i86
+:usage. generate code shaped as Microsoft C/C++ 8.00c's
+:jusage.
+
 :option. zfw
 :target. 386
 :usage. generate FWAIT instructions

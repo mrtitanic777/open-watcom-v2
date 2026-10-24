@@ -782,7 +782,12 @@ static  void    DoEpilog( void )
             if( CurrProc->state.attr & ROUTINE_NEEDS_PROLOG ) {
                 size = CurrProc->locals.size + CurrProc->targ.push_local_size;
                 if( (CurrProc->prolog_state & PST_RESET_SP)
-                  || size != 0 ) {
+                  || size != 0
+                  /*
+                   * Microsoft C 8 ends every frame with LEAVE on a 186 or later, whether or not
+                   * it has locals to drop (-zmsc)
+                   */
+                  || ( _IsTargetModel( CGSW_X86_MSC8 ) && _CPULevel( CPU_186 ) ) ) {
                     /*
                      * sp is not pointing at saved registers already
                      */
@@ -963,7 +968,15 @@ void    GenProlog( void )
         }
 #endif
 
-        CodeLabel( label, DepthAlign( PROC_ALIGN ) );
+        if( _IsTargetModel( CGSW_X86_MSC8 ) ) {
+            /*
+             * Microsoft C 8 starts every function on an even byte, at /Os as well, padding
+             * with NOP (-zmsc)
+             */
+            CodeHandle( OC_LABEL, 2 - 1, label );
+        } else {
+            CodeLabel( label, DepthAlign( PROC_ALIGN ) );
+        }
 
         attr = FEAttr( AskForLblSym( origlabel ) );
 

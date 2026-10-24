@@ -247,6 +247,14 @@ void DoAlignment( int len )
     unsigned            save_line;
 
     save_line = SavePendingLine( 0 );
+    if( _IsTargetModel( CGSW_X86_MSC8 ) ) {
+        /* Microsoft C 8 pads with NOP, a byte at a time (-zmsc) */
+        static const byte nop = 0x90;
+        for( ; len > 0; --len )
+            SendBytes( &nop, 1 );
+        SavePendingLine( save_line );
+        return;
+    }
     /* get the size of the largest NOP pattern  */
     i = 0;
     for( nop = NopLists[i][0]; len > nop; len -= nop ) {
