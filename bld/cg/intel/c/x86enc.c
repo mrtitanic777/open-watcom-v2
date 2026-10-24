@@ -1235,6 +1235,17 @@ void    GenRegMove( hw_reg_set src, hw_reg_set dst )
  */
 {
     _Code;
+#if _TARGET & _TARG_8086
+    if( _IsTargetModel( CGSW_X86_MSC8 ) ) {
+        /* Microsoft C 8 moves a register into a register as MOV reg,r/m (8B: MOV BP,SP is 8B EC) (-zmsc) */
+        LayOpword( M_MOVRR | 2 | B_KEY_W );
+        OpndSize( src );
+        LayReg( dst );
+        LayRegRM( src );
+        _Emit;
+        return;
+    }
+#endif
     LayOpword( M_MOVRR | B_KEY_W );
     OpndSize( src );
     LayReg( src );
@@ -1933,6 +1944,21 @@ void    GenObjCode( instruction *ins )
             }
         }
 
+#if ( _TARGET & _TARG_8086 )
+        if( _IsTargetModel( CGSW_X86_MSC8 ) && OptForSize == 100
+          && ins->head.opcode == OP_ADD && result != NULL && result->n.class == N_REGISTER
+          && HW_CEqual( result->r.reg, HW_SP ) && right != NULL && right->n.class == N_CONSTANT
+          && right->c.const_type == CONS_ABSOLUTE && right->c.lo.u.int_value == 2 ) {
+            /*
+             * Microsoft C 8 at /Os takes two bytes of a call's arguments off with POP BX -- the
+             * callee may have changed BX, so nothing lives in it (-zmsc)
+             */
+            _Code;
+            LayOpbyte( 0x5b );
+            _Emit;
+            return;
+        }
+#endif
         if( gen == G_MFSTRND ) {
             _Code;
 #if ( _TARGET & _TARG_8086 )
@@ -2001,6 +2027,18 @@ void    GenObjCode( instruction *ins )
             AddSWCons( ins->head.opcode, right, ins->type_class );
             break;
         case G_RR2:
+#if _TARGET & _TARG_8086
+            /*
+             * Microsoft C 8 writes a register-to-register MOV, ADD, OR, ADC, SBB, AND, SUB, XOR or
+             * CMP in its reg,r/m form, the direction bit set: 8B, 03, 2B ... (-zmsc)
+             */
+            if( _IsTargetModel( CGSW_X86_MSC8 ) && ( ( Inst[KEY] & 0xc6 ) == 0x00 || ( Inst[KEY] & 0xfe ) == 0x88 ) ) {
+                Inst[KEY] |= 0x02;
+                LayRegOp( left );
+                LayRMRegOp( right );
+                break;
+            }
+#endif
             LayRegOp( right );
             LayRMRegOp( left );
             break;
