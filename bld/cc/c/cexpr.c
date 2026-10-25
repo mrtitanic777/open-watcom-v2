@@ -1448,7 +1448,7 @@ static TREEPTR GetExpr( void )
                          */
                         if( *plist != NULL
                           && (*plist)->decl_type != TYP_DOT_DOT_DOT ) {
-                            CErr1( ERR_PARM_COUNT_MISMATCH );
+                            ParmCountMismatch();
                         }
                     } else {
                         AddCallNode( tree );
@@ -1992,10 +1992,10 @@ static TREEPTR GenNextParm( TREEPTR tree, TYPEPTR **plistptr )
             if( !CompFlags.register_conventions ) {
                 CWarn1( ERR_PARM_COUNT_WARNING );
             } else {
-                CErr1( ERR_PARM_COUNT_MISMATCH );
+                ParmCountMismatch();
             }
 #else
-            CErr1( ERR_PARM_COUNT_MISMATCH );
+            ParmCountMismatch();
 #endif
             *plist = GetType( TYP_DOT_DOT_DOT );        /* shut up message */
             plist = NULL;
@@ -2502,7 +2502,7 @@ static TREEPTR StartFunc( TREEPTR tree, TYPEPTR **plistptr )
                 parm_type = *parm_types;
                 if( parm_type != NULL
                   && parm_type->decl_type != TYP_VOID ) {
-                    CErr1( ERR_PARM_COUNT_MISMATCH );
+                    ParmCountMismatch();
                 }
             } else {                                /* check later */
                 AddCallNode( tree );

@@ -1913,6 +1913,40 @@ static void     GenUnkLea( pointer value )
     Inst[RMR] |= DoIndex( HW_xBP );
 }
 
+#if ( _TARGET & _TARG_8086 )
+static bool CleanupDiesAtLeave( instruction *ins )
+/*************************************************
+ * Nothing after `ins` in its block reaches the stack, the block returns, and the epilog is
+ * LEAVE alone: SP added to here is set back from BP all the same
+ */
+{
+    instruction *next;
+    opcnt       i;
+
+    for( next = ins->head.next; next->head.opcode != OP_BLOCK; next = next->head.next ) {
+        switch( next->head.opcode ) {
+        case OP_MOV: case OP_ADD: case OP_SUB: case OP_AND: case OP_OR: case OP_XOR:
+        case OP_NEGATE: case OP_COMPLEMENT: case OP_LSHIFT: case OP_RSHIFT: case OP_CONVERT:
+        case OP_LA: case OP_CAREFUL_LA: case OP_NOP: case OP_EXT_ADD: case OP_EXT_SUB:
+            break;
+        default:
+            return( false );
+        }
+        if( next->result != NULL && next->result->n.class == N_REGISTER
+          && HW_COvlap( next->result->r.reg, HW_SP ) )
+            return( false );
+        for( i = 0; i < next->num_operands; ++i ) {
+            if( next->operands[i]->n.class == N_REGISTER && HW_COvlap( next->operands[i]->r.reg, HW_SP ) ) {
+                return( false );
+            }
+        }
+    }
+    if( !_IsBlkAttr( _BLOCK( next ), BLK_RETURN ) )
+        return( false );
+    return( EpilogIsLeaveOnly() );
+}
+#endif
+
 void    GenObjCode( instruction *ins )
 /*************************************
  * Generate object code for the instruction "ins" based on gen_table->generate
@@ -1945,6 +1979,17 @@ void    GenObjCode( instruction *ins )
         }
 
 #if ( _TARGET & _TARG_8086 )
+        if( _IsTargetModel( CGSW_X86_MSC8 ) && ins->head.opcode == OP_ADD && result != NULL
+          && result->n.class == N_REGISTER && HW_CEqual( result->r.reg, HW_SP )
+          && right != NULL && right->n.class == N_CONSTANT && right->c.const_type == CONS_ABSOLUTE
+          && right->c.lo.u.int_value > 0 && CleanupDiesAtLeave( ins ) ) {
+            /*
+             * Microsoft C 8 does not take a call's arguments off when all that is left of the
+             * function is its LEAVE: SP is set back from BP there (-zmsc)
+             */
+            AdjustStackDepth( ins );
+            return;
+        }
         if( _IsTargetModel( CGSW_X86_MSC8 ) && OptForSize == 100
           && ins->head.opcode == OP_ADD && result != NULL && result->n.class == N_REGISTER
           && HW_CEqual( result->r.reg, HW_SP ) && right != NULL && right->n.class == N_CONSTANT

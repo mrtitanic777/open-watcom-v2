@@ -37,3 +37,4 @@ extern void         DoRTCall( rt_class rtindex, bool pop );
 extern void         AdjustStackDepth( instruction *ins );
 extern void         AdjustStackDepthDirect( int adjust );
 extern bool         BaseIsSP( name *op );
+extern bool         EpilogIsLeaveOnly( void );

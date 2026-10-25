@@ -101,6 +101,22 @@ static cmp_type const   CompTable[DATA_TYPE_SIZE][DATA_TYPE_SIZE] = {
 };
 
 
+void ParmCountMismatch( void )
+/*****************************
+ * A call with another number of arguments than the function's definition or prototype says:
+ * an error, but under -zmsc a warning, as Microsoft C 8 gives (C4020) -- the same source is
+ * accepted as it accepts it.
+ */
+{
+#if _CPU == 8086
+    if( TargetSwitches & CGSW_X86_MSC8 ) {
+        CWarn1( ERR_PARM_COUNT_WARNING );
+        return;
+    }
+#endif
+    CErr1( ERR_PARM_COUNT_MISMATCH );
+}
+
 static cmp_type InUnion( TYPEPTR typ1, TYPEPTR typ2, bool reversed )
 {
     FIELDPTR    field;
@@ -256,7 +272,7 @@ static typecheck_err CheckCompatibleFunctionParms( TYPEPTR typ1, TYPEPTR typ2, b
             if( p1 != NULL
               || p2 != NULL ) {
                 if( topLevelCheck ) {
-                    CErr1( ERR_PARM_COUNT_MISMATCH );
+                    ParmCountMismatch();
                 }
                 rc = TCE_PARM_COUNT_MISMATCH;
             }
@@ -647,10 +663,10 @@ static void CompareParms( TYPEPTR *master, TREEPTR parms, bool reverse )
         if( !CompFlags.register_conventions ) {
             CWarn1( ERR_PARM_COUNT_WARNING );
         } else {
-            CErr1( ERR_PARM_COUNT_MISMATCH );
+            ParmCountMismatch();
         }
 #else
-        CErr1( ERR_PARM_COUNT_MISMATCH );
+        ParmCountMismatch();
 #endif
     }
     if( reverse ) {

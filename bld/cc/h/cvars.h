@@ -382,6 +382,7 @@ extern bool         CheckCompatibleFunction( TYPEPTR typ1, TYPEPTR typ2, bool to
 extern bool         CheckCompatibleLanguage( type_modifiers typ1, type_modifiers typ2 );
 extern void         CheckTernary( TYPEPTR typ1, TYPEPTR typ2 );
 extern void         CheckCallParms( void );
+extern void         ParmCountMismatch( void );
 extern void         CheckRetType( TREEPTR );
 extern void         CompatiblePtrType( TYPEPTR, TYPEPTR, TOKEN );
 extern bool         CheckIdenticalType( TYPEPTR, TYPEPTR );

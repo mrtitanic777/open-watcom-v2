@@ -756,6 +756,30 @@ static void    GenLeaSP( int offset )
     _Emit;
 }
 
+bool    EpilogIsLeaveOnly( void )
+/*************************************
+ * The epilog is LEAVE and the return, nothing between: SP is set back from BP whatever it was
+ * -- under -zmsc on a 186 or later, a frame with no registers of the caller's to pop
+ */
+{
+    hw_reg_set  to_pop;
+
+    if( _IsntTargetModel( CGSW_X86_MSC8 ) || !_CPULevel( CPU_186 ) )
+        return( false );
+    if( _RoutineIsInterrupt( CurrProc->state.attr ) || CHAIN_FRAME )
+        return( false );
+    if( (CurrProc->state.attr & ROUTINE_NEEDS_PROLOG) == 0 )
+        return( false );
+    if( CurrProc->targ.sp_frame || CurrProc->targ.base_adjust != 0 )
+        return( false );
+    if( (CurrProc->state.attr & ROUTINE_LOADS_DS) && HW_COvlap( CurrProc->state.unalterable, HW_DS ) )
+        return( false );
+    to_pop = SaveRegs();
+    HW_CTurnOff( to_pop, HW_FLTS );
+    HW_CTurnOff( to_pop, HW_xBP );
+    return( HW_CEqual( to_pop, HW_EMPTY ) );
+}
+
 static  void    DoEpilog( void )
 /******************************/
 {
