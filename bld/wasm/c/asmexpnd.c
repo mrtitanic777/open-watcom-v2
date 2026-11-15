@@ -382,10 +382,31 @@ static bool createconstant( const char *name, bool value, token_buffer *tokbuf, 
         dir->e.constinfo->expand_early = expand_early;
     } else if(( dir->sym.state != SYM_CONST )
         || ( !dir->e.constinfo->redefine && ( Parse_Pass == PASS_1 ))) {
+        /*
+         * MASM allows redefining a numeric EQU to the SAME value (only a
+         * DIFFERENT value is error A2005).  The DDK headers rely on this, e.g.
+         * `VCOND_DEVICE_ID EQU 38h' appears in both vmm.inc and vcond.inc.
+         * Permit an identical single-number redefine; otherwise error as before.
+         */
+        if( dir->sym.state == SYM_CONST
+          && dir->e.constinfo->count == 1
+          && dir->e.constinfo->tokens[0].class == TC_NUM
+          && tokbuf != NULL
+          && tokbuf->tokens[start].class == TC_NUM
+          && tokbuf->tokens[start + 1].class == TC_FINAL
+          && dir->e.constinfo->tokens[0].u.value == tokbuf->tokens[start].u.value ) {
+            return( RC_OK );
+        }
         /* error */
         AsmErr( LABEL_ALREADY_DEFINED, dir->sym.name );
         return( RC_ERROR );
     }
+
+    /* record whether this constant is defined in the top-level source (not an
+     * include); AsmResetPassConstants() drops only those each pass so their
+     * order-dependent persistence cannot skew an earlier IFDEF (e.g. the driver
+     * body's Create_..._Service_Table vs the external table in its own .inc). */
+    dir->e.constinfo->main_file = ( get_curr_srcfile() == ModuleInfo.srcfile );
 
     if( value ) {
         if( dir->e.constinfo->count == 1 && dir->e.constinfo->tokens[0].class == TC_NUM ) {
@@ -402,6 +423,49 @@ static bool createconstant( const char *name, bool value, token_buffer *tokbuf, 
             dir->e.constinfo->tokens = new;
         }
         return( RC_OK );
+    }
+
+    /*
+     * MASM text macro:  name EQU <text>  /  name TEXTEQU <text>.
+     * The <...> body is textual and is re-parsed at each point of use, so
+     * re-tokenize it now and store the resulting tokens rather than the raw
+     * angle-string.  This makes  X EQU <OFFSET32 foo>  then  dd X  behave
+     * like the literal  dd OFFSET32 foo  (the scanner delivers a single
+     * TC_STRING_ANGLE token here; EvalExpr would otherwise fold it into a
+     * character string and mis-size it in a data initializer).
+     * An empty body (<>) is left as the lone angle string so the blank tests
+     * (.ERRB/.ERRNB, IFB) still see a blank operand.
+     */
+    if( tokbuf != NULL
+      && tokbuf->tokens[start].class == TC_STRING_ANGLE
+      && tokbuf->tokens[start + 1].class == TC_FINAL
+      && tokbuf->tokens[start].string_ptr[0] != '\0' ) {
+        token_buffer    *scan;
+
+        scan = MemAllocSafe( sizeof( *scan ) );
+        if( !AsmScan( scan, tokbuf->tokens[start].string_ptr ) ) {
+            for( count = 0; scan->tokens[count].class != TC_FINAL; count++ )
+                ;
+            if( count > 0 ) {
+                new = MemAllocSafe( count * sizeof( asm_tok ) );
+                for( i = 0; i < count; i++ ) {
+                    new[i].class = scan->tokens[i].class;
+                    memcpy( new[i].u.bytes, scan->tokens[i].u.bytes, sizeof( new[i].u.bytes ) );
+                    new[i].string_ptr = MemStrdupSafe( scan->tokens[i].string_ptr );
+                }
+                /* A text equate ( name EQU <text> ) is redefinable in MASM,
+                 * regardless of how many tokens the body holds -- the VMM DDK's
+                 * BeginProc re-issues  ??_name EQU <Name>  and
+                 * ??_basereg EQU <ebp>  on every macro invocation. */
+                dir->e.constinfo->redefine = true;
+                FreeConstData( dir->e.constinfo );
+                dir->e.constinfo->count = count;
+                dir->e.constinfo->tokens = new;
+                MemFree( scan );
+                return( RC_OK );
+            }
+        }
+        MemFree( scan );
     }
 
     if( tokbuf->tokens[start].class != TC_FINAL

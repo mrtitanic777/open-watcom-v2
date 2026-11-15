@@ -133,6 +133,7 @@ typedef struct stacknode {
 typedef struct seg_list {
     struct seg_list     *next;
     dir_node_handle     seg;
+    unsigned            nesting;    // count of extra (nested) reopens of this same segment
 } seg_list;
 
 typedef struct {
@@ -172,6 +173,7 @@ typedef struct {
     boolbit             predef      :1; // whether it is predefined symbol
     boolbit             redefine    :1; // whether it is redefinable or not
     boolbit             expand_early:1; // if true expand before parsing
+    boolbit             main_file   :1; // defined in the top-level source (not an include)
 } const_info;
 
 typedef struct regs_list {
@@ -281,6 +283,8 @@ typedef struct {
         field_list      *head;      // head of fields list
         field_list      *tail;      // tail of fields list
     }                   fields;     // list of fields
+    boolbit             is_union :1; // MASM UNION: members overlap at offset 0, size = max member
+    unsigned            max_size;   // union: largest member size seen so far
 } struct_info;
 
 union entry {
@@ -368,6 +372,8 @@ extern dir_node_handle  dir_insert( const char *, table_type );
 extern void             dir_to_sym( dir_node_handle );
 extern void             dir_change( dir_node_handle, table_type );
 extern void             dir_init( dir_node_handle, table_type );
+extern dir_node_handle  dir_reset( dir_node_handle );
+extern void             dir_requeue( dir_node_handle );
 extern void             dir_fini( dir_node_handle );
 
 extern uint_32          GetCurrAddr( void );    // Get offset from current segment

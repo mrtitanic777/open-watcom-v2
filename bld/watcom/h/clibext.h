@@ -122,7 +122,11 @@
  #endif
  #ifdef __UNIX__
     #include <strings.h>    /* for str*case* functions */
+  #if !defined( _WIN32 ) && !defined( __MINGW32__ ) && !defined( __CYGWIN__ )
+    /* MinGW/Cygwin define __UNIX__ for the gcc host build but ship no <sys/wait.h>;
+       host build-tools (mkopcode, ...) don't use wait(), so skip it there. */
     #include <sys/wait.h>
+  #endif
  #endif
 
     #define _WCRTLINK

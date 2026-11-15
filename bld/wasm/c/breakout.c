@@ -280,13 +280,27 @@ bool directive( token_buffer *tokbuf, token_idx i, asm_token direct )
     case T_HIGHWORD:
     case T_LOW:
     case T_LOWWORD:
+    case T_OPTION:
+        /*
+         * MASM 6 OPTION directive: assembler-behaviour settings such as
+         * OLDMACROS, OLDSTRUCTS, NOSCOPED, SEGMENT:FLAT, OFFSET:FLAT,
+         * PROC:PRIVATE, CASEMAP:..., DOTNAME/NODOTNAME.  The Win95 DDK
+         * VMM.INC establishes its flat model with OPTION but then declares
+         * every segment explicitly (SEGMENT DWORD PUBLIC USE32 'class'),
+         * which wasm already honours -- so accept the directive and ignore
+         * its settings rather than aborting the whole source as NOT_SUPPORTED.
+         */
+        if( Options.mode & MODE_IDEAL ) {
+            AsmError( UNKNOWN_DIRECTIVE );
+            return( RC_ERROR );
+        }
+        return( RC_OK );
     case T_ADDR:
     case T_BOUND:
     case T_CASEMAP:
     case T_INVOKE:
     case T_LROFFSET:
     case T_OPATTR:
-    case T_OPTION:
     case T_POPCONTEXT:
     case T_PUSHCONTEXT:
     case T_PROTO:
@@ -327,7 +341,10 @@ bool directive( token_buffer *tokbuf, token_idx i, asm_token direct )
                         AsmError( SYNTAX_ERROR );
                         return( RC_ERROR );
                     }
-                    AsmTakeOut( name );
+                    /* stash (not free) so it can be restored next pass -- see
+                     * AsmPurgeMacro; a define-once assembler that skips
+                     * include-guarded re-includes must not lose purged macros */
+                    AsmPurgeMacro( name );
                 }
             }
         }
@@ -336,7 +353,6 @@ bool directive( token_buffer *tokbuf, token_idx i, asm_token direct )
     case T_MASK:
     case T_RECORD:
     case T_TYPEDEF:
-    case T_UNION:
         AsmError( NOT_SUPPORTED );
         return( RC_ERROR );
     case T_ORG:
@@ -446,6 +462,7 @@ bool directive( token_buffer *tokbuf, token_idx i, asm_token direct )
             break;
         }
     case T_STRUC:
+    case T_UNION:                       /* MASM UNION: handled as an overlapping struct */
         return( StructDef( tokbuf, i ) );
     case T_NAME:
         if( Parse_Pass == PASS_1 )

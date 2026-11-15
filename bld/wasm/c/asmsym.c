@@ -353,9 +353,124 @@ void AsmTakeOut( const char *name )
         /* found it -- so take it out */
         sym = *sym_ptr;
         *sym_ptr = sym->next;
+        /*
+         * Also unlink from the per-type Tables[] queue (dir_node next/prev).
+         * dir_fini/FreeASym only removed it from the hash chain; without this
+         * the freed node stays on Tables[TAB_MACRO] and a later symbol added to
+         * that queue writes through the dangling link -> use-after-free.  This
+         * is what corrupted the heap when a purged macro (e.g. the VMM DDK's
+         * Equate_Service in Control_Dispatch) was redefined on a later pass.
+         */
+        dir_reset( (dir_node_handle)sym );
         dir_fini( (dir_node_handle)sym );
         FreeASym( sym );
     }
+    return;
+}
+
+/*
+ * PURGE-of-macro across passes.
+ *
+ * wasm persists the symbol table across passes and skips include-guarded
+ * includes on pass 2 (VMM.INC wraps its whole body in `ifndef _VMM_ ... endif`,
+ * and _VMM_ stays defined from pass 1).  A macro PURGEd during pass 1 -- e.g.
+ * the DDK's Control_Dispatch, purged by End_Control_Dispatch -- would then be
+ * gone on pass 2 and never redefined, so its pass-2 re-invocation failed with a
+ * spurious syntax error.  MASM re-scans and re-defines each pass, so the macro
+ * is present at the same source point on every pass.
+ *
+ * To match that, PURGE stashes the macro (fully intact) instead of freeing it,
+ * and AsmRestorePurgedMacros() re-links every stashed macro at the start of the
+ * next pass.  The source then re-purges it at the same point, so each pass sees
+ * an identical macro environment.  The stash link reuses sym->next (the hash
+ * chain link, free once the node is off the hash) -- distinct from the dir_node
+ * next/prev used by the Tables[] type queue.
+ */
+static dir_node_handle  PurgedMacroList = NULL;
+
+void AsmPurgeMacro( const char *name )
+/************************************/
+{
+    asm_sym_handle  sym;
+    asm_sym_handle  *sym_ptr;
+
+    sym_ptr = AsmFind( name );
+    if( *sym_ptr != NULL ) {
+        sym = *sym_ptr;
+        *sym_ptr = sym->next;                           /* unlink hash chain */
+        dir_reset( (dir_node_handle)sym );              /* unlink Tables queue */
+        --AsmSymCount;
+        sym->next = (asm_sym_handle)PurgedMacroList;    /* stash (reuse hash link) */
+        PurgedMacroList = (dir_node_handle)sym;
+    }
+    return;
+}
+
+void AsmResetPassConstants( void )
+/*********************************
+ * Remove user EQU/= constants at the start of a pass so the source re-scan
+ * re-establishes them in order, matching MASM (which rebuilds symbols each
+ * pass).  Without this a constant defined partway through the source persists
+ * across passes and changes an IFDEF that runs earlier on a later pass -- e.g.
+ * `Create_VKD_Service_Table' (set in the driver body) is already defined when
+ * the external `Begin_Service_Table' in the driver's own .inc runs on pass 2,
+ * so that invocation wrongly takes the create path and the service table is
+ * emitted twice.  Constants live only in the hash table (dir_init does not queue
+ * TAB_CONST), so this walks the hash buckets, not Tables[TAB_CONST].
+ */
+{
+    unsigned        b;
+    asm_sym_handle  sym;
+    asm_sym_handle  nxt;
+
+    for( b = 0; b < HASH_TABLE_SIZE; b++ ) {
+        for( sym = sym_table[b]; sym != NULL; sym = nxt ) {
+            dir_node_handle dir;
+
+            nxt = sym->next;
+            dir = (dir_node_handle)sym;
+            /*
+             * Only non-redefinable EQU constants (Create_..., _VMM_, flag bits):
+             * these are the stable config/guard symbols whose persistence across
+             * passes changes an earlier IFDEF.  Redefinable `=' constants (e.g.
+             * ??_CUR_CODE_SEG, Num_*_Services, running counters) are per-pass
+             * state that macros manage while a pass runs -- leave them alone.
+             */
+            if( sym->state == SYM_CONST
+              && !dir->e.constinfo->predef
+              && !dir->e.constinfo->redefine
+              && dir->e.constinfo->main_file ) {
+                AsmTakeOut( sym->name );
+            }
+        }
+    }
+    return;
+}
+
+void AsmRestorePurgedMacros( void )
+/*********************************/
+{
+    dir_node_handle dir;
+    dir_node_handle nxt;
+    asm_sym_handle  sym;
+    asm_sym_handle  *sym_ptr;
+
+    for( dir = PurgedMacroList; dir != NULL; dir = nxt ) {
+        sym = (asm_sym_handle)dir;
+        nxt = (dir_node_handle)sym->next;
+        sym_ptr = AsmFind( sym->name );
+        if( *sym_ptr == NULL ) {
+            sym->next = *sym_ptr;                       /* NULL */
+            *sym_ptr = sym;                             /* re-link hash chain */
+            ++AsmSymCount;
+            dir_requeue( dir );                         /* re-link Tables queue */
+        } else {
+            /* redefined again in the meantime -- discard the stashed copy */
+            dir_fini( dir );
+            FreeASym( sym );
+        }
+    }
+    PurgedMacroList = NULL;
     return;
 }
 

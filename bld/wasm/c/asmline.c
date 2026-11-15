@@ -488,8 +488,9 @@ char *ReadTextLine( char *string )
 
     string[0] = '\0';
     line = input_get( string );
-    if( line != NULL )
+    if( line != NULL ) {
         return( line );
+    }
     if( !get_asmline( string, MAX_LINE_LEN, AsmFiles.fp[ASM] ) ) {
         return( NULL );
     }
@@ -762,6 +763,21 @@ void AsmLine( const char *string )
     if( AsmScan( &tokbuf, string ) ) {
         write_to_file = false;
         return;
+    }
+    /*
+     * A lone text equate used as a statement ( name EQU <text> ; then  name )
+     * must be substituted before the macro/statement is decided -- the VMM DDK's
+     * EndProc invokes  ??_ends  whose text is the matching segment-close macro
+     * name (e.g. VxD_LOCKED_CODE_ENDS).  ExpandMacro only recognises a macro
+     * NAME token, so expand the leading const first, then let ExpandMacro run.
+     * Guarded to count==1 so a definition ( name EQU ... ) LHS is never expanded.
+     */
+    if( tokbuf.count == 1 && tokbuf.tokens[0].class == TC_ID ) {
+        bool expanded;
+        if( ExpandSymbol( &tokbuf, 0, false, &expanded ) ) {
+            write_to_file = false;
+            return;
+        }
     }
     if( ExpandMacro( &tokbuf ) ) {
         write_to_file = false;

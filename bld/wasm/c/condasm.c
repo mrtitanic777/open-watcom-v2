@@ -95,7 +95,15 @@ void prep_line_for_conditional_assembly( char *line )
     /* fixme */
     /* get rid of # signs */
     ptr = line + strspn( line, " \t" );
-    for( end = ptr; isalnum( *end ) || *end == '#' ; ++end )
+    /*
+     * Include '_' in the first-word scan.  Identifiers may contain '_', so a
+     * symbol like `IF_BIT' must be taken whole -- stopping at the '_' extracted
+     * "IF", which get_instruction() matched as the IF directive, so during a
+     * skipped (false) conditional the line was NOT blanked (IF-family lines are
+     * never blanked) and `IF_BIT EQU 9' executed anyway.  Under a double-include
+     * guard (VMM.INC's `ifndef _VMM_`) that redefined every such symbol.
+     */
+    for( end = ptr; isalnum( (unsigned char)*end ) || *end == '_' || *end == '#' ; ++end )
         /* nothing to do */ ;
     fix = *end;
     *end = '\0';
@@ -211,6 +219,16 @@ bool conditional_error_directive( token_buffer *tokbuf, token_idx i )
     case T_ERRIFIDN:
     case T_ERRIFIDNI:
         ExpandTheWorld( tokbuf, i + 1, false, true );
+        break;
+    case T_DOT_ERRB:
+    case T_DOT_ERRNB:
+    case T_ERRIFB:
+    case T_ERRIFNB:
+        /* MASM expands text macros (name EQU <text>) in the .ERRB/.ERRNB
+         * argument before testing for blank; expand consts only (no EvalExpr,
+         * which would collapse an empty <> string argument). */
+        ExpandAllConsts( tokbuf, i + 1, false );
+        break;
     }
 
     switch( direct ) {

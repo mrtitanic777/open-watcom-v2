@@ -315,9 +315,32 @@ static bool macro_local( token_buffer *tokbuf, macro_info *info )
     tok = tokbuf->tokens + 1;
     while( tok->class == TC_ID ) {
         local_label *locallabel;
+        char        namebuf[MAX_LINE_LEN];
+        char        *np;
+
+        /*
+         * A LOCAL name may CONCATENATE a macro parameter via `&' (MASM idiom
+         * `LOCAL name&param' / `LOCAL $$&Procedure', Win95 DDK vmm.inc): the
+         * tokenizer splits it into name, `&', param, ... Accumulate the whole
+         * run into one local name (the `&param' stays in the key so the body's
+         * matching `name&param' references resolve to the same generated label);
+         * previously wasm took only the first token and errored on the `&'.
+         */
+        np = namebuf;
+        for( ;; ) {
+            if( tok->string_ptr != NULL ) {
+                np += sprintf( np, "%s", tok->string_ptr );
+            } else {
+                *np++ = '&';        /* the `&' concatenation operator tokenizes with no string_ptr */
+            }
+            if( tok[1].class == TC_COMMA || tok[1].class == TC_FINAL )
+                break;
+            tok++;
+        }
+        *np = '\0';
 
         locallabel = MemAllocSafe( sizeof( local_label ) );
-        locallabel->local = MemStrdupSafe( tok->string_ptr );
+        locallabel->local = MemStrdupSafe( namebuf );
         locallabel->local_len = strlen( locallabel->local );
         locallabel->label = NULL;
         /*
@@ -650,6 +673,11 @@ static size_t my_sprintf( char *dest, const char *format, int argc, char *argv[]
         paramno = atoi( buffer );
         strncat( dest, start, end - start );
         /**/myassert( paramno < argc );
+        if( paramno >= argc ) {
+            /* defensive: a placeholder index with no corresponding argument
+             * (should not happen) substitutes nothing rather than reading OOB */
+            continue;
+        }
         if( argv[paramno] != NULL ) {
             delim = ( kind == '#' && delims != NULL ) ? delims[paramno] : 0;
             q = dest + strlen( dest );
@@ -670,6 +698,37 @@ static size_t my_sprintf( char *dest, const char *format, int argc, char *argv[]
         }
     }
     return( strlen( dest ) );
+}
+
+static void collapse_double_amp( char *s )
+/*****************************************
+ * MASM 6 nested-macro escaping: `&&' in a macro body reduces to a single `&' on
+ * each expansion level, so a macro that DEFINES a macro (the Win95 DDK's
+ * `VxD_&&segname&&_CODE_SEG MACRO' inside MakeCodeSeg) leaves `&segname&' for the
+ * inner level's own substitution. wasm consumed only single `&' around params, so
+ * the surviving `&&' stayed and broke the inner MACRO directive (E032). Collapse
+ * one level of `&&' here, once per expansion. Skip inside quoted strings.
+ */
+{
+    char    *q = s;
+    char    quote = 0;
+
+    for( ; *s != '\0'; ) {
+        if( quote ) {
+            if( *s == quote )
+                quote = 0;
+            *q++ = *s++;
+        } else if( *s == '"' || *s == '\'' ) {
+            quote = *s;
+            *q++ = *s++;
+        } else if( s[0] == '&' && s[1] == '&' ) {
+            *q++ = '&';
+            s += 2;
+        } else {
+            *q++ = *s++;
+        }
+    }
+    *q = '\0';
 }
 
 static char *fill_in_params_and_labels( char *line, macro_info *info )
@@ -727,6 +786,7 @@ static char *fill_in_params_and_labels( char *line, macro_info *info )
     if( info->labels.head != NULL ) {
         MemFree( lineinfo.line );
     }
+    collapse_double_amp( new_line );        /* MASM `&&' -> `&' per expansion level */
     return( new_line );
 }
 
@@ -770,6 +830,19 @@ bool ExpandMacro( token_buffer *tokbuf )
 
     if( tokbuf->tokens[0].class == TC_FINAL )
         return( RC_OK );
+    /*
+     * `.xcref name[,name]' / `.cref' / `.nocref' take SYMBOL NAMES as operands,
+     * not macro invocations -- MASM never expands a macro named in that operand
+     * list. The scan below would otherwise find the macro name anywhere on the
+     * line and expand it (the Win95 DDK's `.xcref ?mkarg' wrongly ran ?mkarg,
+     * whose body forward-references ?deflocal -> E032). Skip expansion here.
+     */
+    if( (tokbuf->tokens[0].class == TC_DIRECTIVE || tokbuf->tokens[0].class == TC_RES_ID)
+      && ( tokbuf->tokens[0].u.token == T_DOT_XCREF
+        || tokbuf->tokens[0].u.token == T_DOT_CREF
+        || tokbuf->tokens[0].u.token == T_DOT_NOCREF ) ) {
+        return( RC_OK );
+    }
     /*
      * first, find out if it is a macro
      */
@@ -821,9 +894,19 @@ bool ExpandMacro( token_buffer *tokbuf )
             case T_ERRIFDEF:
             case T_ERRIFNDEF:
                 /*
-                 * this is a directive that takes a symbol/macro name as
-                 * its argument — don't expand the name as a macro
-                 * invocation, continue regular processing
+                 * these directives take a symbol/macro NAME as their argument;
+                 * don't expand the name as a macro invocation.
+                 */
+                return( RC_OK );
+            case T_EQU:
+            case T_TEXTEQU:
+                /*
+                 * `X EQU macroname' (no angle brackets) aliases the macro -- it
+                 * must NOT invoke it at the point of definition.  The VMM DDK's
+                 * `VxD_ICODE_SEG equ VxD_INIT_CODE_SEG' relies on this: the alias
+                 * is stored as a text equate and, when used as a statement, the
+                 * leading-text-const expansion in AsmLine turns it back into the
+                 * macro name for ExpandMacro to invoke.
                  */
                 return( RC_OK );
             }
@@ -1004,6 +1087,51 @@ bool ExpandMacro( token_buffer *tokbuf )
     return( RC_OK );
 }
 
+static void reset_macro_body( dir_node_handle dir )
+/**************************************************
+ * Free a macro's params/labels/lines and null the lists (keeping the macroinfo
+ * struct) so a redefinition re-reads and re-stores the body.  Needed because
+ * wasm persists macros across passes, but a macro can be (re)defined with a
+ * different body at different source points -- the VMM DDK's `VKD_Service' is
+ * defined one way by an external Begin_Service_Table and another by the create
+ * one.  Without re-storing, pass 2 keeps whichever body was defined LAST on
+ * pass 1, so the earlier invocation runs the wrong variant.  MASM re-defines
+ * each pass; macro_exam keys store_data off lines.head == NULL, so clearing the
+ * lists makes it re-store.
+ */
+{
+    macro_info      *info = dir->e.macroinfo;
+    parm_list       *pcurr;
+    parm_list       *pnext;
+    local_label     *lcurr;
+    local_label     *lnext;
+    asmline         *acurr;
+    asmline         *anext;
+
+    for( pcurr = info->params.head; pcurr != NULL; pcurr = pnext ) {
+        pnext = pcurr->next;
+        MemFree( pcurr->label );
+        if( pcurr->replace != NULL )
+            MemFree( pcurr->replace );
+        if( pcurr->def != NULL )
+            MemFree( pcurr->def );
+        MemFree( pcurr );
+    }
+    for( lcurr = info->labels.head; lcurr != NULL; lcurr = lnext ) {
+        lnext = lcurr->next;
+        MemFree( lcurr->local );
+        MemFree( lcurr );
+    }
+    for( acurr = info->lines.head; acurr != NULL; acurr = anext ) {
+        anext = acurr->next;
+        MemFree( acurr->line );
+        MemFree( acurr );
+    }
+    info->params.head = info->params.tail = NULL;
+    info->labels.head = info->labels.tail = NULL;
+    info->lines.head = info->lines.tail = NULL;
+}
+
 bool MacroDef( token_buffer *tokbuf, token_idx i, bool hidden )
 /*************************************************************/
 {
@@ -1035,6 +1163,10 @@ bool MacroDef( token_buffer *tokbuf, token_idx i, bool hidden )
             AsmError( PROC_ALREADY_DEFINED );
             return( RC_ERROR );
         }
+        /* pass 2+: this is a redefinition -- clear the old body so macro_exam
+         * re-stores it (macros can be defined differently at different source
+         * points; keeping the stale body runs the wrong variant) */
+        reset_macro_body( currproc );
     }
     return( macro_exam( tokbuf, i ) );
 }

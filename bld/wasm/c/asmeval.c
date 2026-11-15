@@ -157,6 +157,7 @@ static int get_precedence( token_buffer *tokbuf, token_idx i )
 #endif
         case T_SEG:
         case T_OFFSET:
+        case T_OFFSET32:
             return( 5 );
         }
         break;
@@ -709,6 +710,7 @@ static bool calculate( expr_list *token_1, expr_list *token_2, token_buffer *tok
             if( token_1->type == EXPR_REG ) {
                 switch( token_2->instr ) {
                 case T_OFFSET:
+                case T_OFFSET32:
                 case T_NULL:
                     break;
                 default:

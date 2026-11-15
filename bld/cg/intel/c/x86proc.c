@@ -114,6 +114,27 @@ const hw_reg_set PushRegs[] = {
 };
 
 
+/* Is any stack parameter of the routine referenced by an instruction? (set by ScanInstructions: a routine whose parameters are
+   never read needs no BP to address them, only the callee's `ret n` to remove them) */
+static  bool    ParmsReferenced = true;
+
+static  bool    OpUsesStackParm( name *op )
+/*****************************************/
+{
+    if( op == NULL )
+        return( false );
+    if( op->n.class == N_TEMP )
+        return( (op->t.temp_flags & STACK_PARM) != 0 );
+    if( op->n.class == N_INDEXED ) {
+        if( OpUsesStackParm( op->i.index ) )
+            return( true );
+        if( op->i.base != NULL && OpUsesStackParm( op->i.base ) )
+            return( true );
+    }
+    return( false );
+}
+
+
 static  bool    ScanInstructions( void )
 /**************************************/
 {
@@ -123,12 +144,26 @@ static  bool    ScanInstructions( void )
     bool        sp_constant;
 
     CurrProc->contains_call = true;
+    ParmsReferenced = true;
     if( BlockByBlock )
         return( false );
     CurrProc->contains_call = false;
+    ParmsReferenced = false;
     sp_constant = true;
     for( blk = HeadBlock; blk != NULL; blk = blk->next_block ) {
         for( ins = blk->ins.head.next; ins->head.opcode != OP_BLOCK; ins = ins->head.next ) {
+            if( ins->head.opcode != OP_PARM_DEF ) {
+                opcnt   k;
+
+                for( k = ins->num_operands; k-- > 0; ) {
+                    if( OpUsesStackParm( ins->operands[k] ) ) {
+                        ParmsReferenced = true;
+                    }
+                }
+                if( OpUsesStackParm( ins->result ) ) {
+                    ParmsReferenced = true;
+                }
+            }
             if( _OpIsCall( ins->head.opcode ) ) {
                 if( ins->head.opcode == OP_CALL_INDIRECT ) {
                     CurrProc->contains_call = true;
@@ -276,7 +311,7 @@ static  void    AdjustPushLocals( void )
 static  bool    NeedBPProlog( void )
 /**********************************/
 {
-    if( CurrProc->parms.size != 0 )
+    if( CurrProc->parms.size != 0 && ParmsReferenced )
         return( true );
     if( CurrProc->locals.size != 0 )
         return( true );

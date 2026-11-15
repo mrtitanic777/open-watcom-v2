@@ -411,6 +411,21 @@ static bool get_id( asm_tok *tok, const char **input, char **output )
         return( RC_OK );
     ins = get_instruction( tok->string_ptr );
     if( ins == NULL ) {
+        /*
+         * MASM accepts `pushaw'/`popaw' (16-bit PUSHA/POPA -- 66 60 / 66 61 in a
+         * USE32 segment).  wasm's opcode table has only `pusha'/`popa', which are
+         * already the F_16 (16-bit, 66-prefixed) forms, so alias the -w spellings
+         * to them.  Cheaper and safer than adding new tokens (the mkopcode
+         * .tok/asminsd.h enum lockstep is fragile).  Reconstructed VxDs declicl
+         * and el59x use these mnemonics.
+         */
+        if( stricmp( tok->string_ptr, "pushaw" ) == 0 ) {
+            ins = get_instruction( "pusha" );
+        } else if( stricmp( tok->string_ptr, "popaw" ) == 0 ) {
+            ins = get_instruction( "popa" );
+        }
+    }
+    if( ins == NULL ) {
         if( tok->string_ptr[1] == '\0' && tok->string_ptr[0] == '?' ) {
             tok->class = TC_QUESTION_MARK;
         }

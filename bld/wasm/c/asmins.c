@@ -1426,6 +1426,26 @@ static bool idata_nofixup( expr_list *opndx )
     value = opndx->value;
     Code->data[Opnd_Count] = value;
 
+    /*
+     * A shift/rotate count is an UNSIGNED imm8 (C1 /n ib), never sign-extended
+     * and independent of the destination size, so classify 80h..FFh as I8 up
+     * front -- the size-specific arms below would otherwise call it I16/I32 (the
+     * generic sign-extend rule that is right for ADD/etc.), breaking e.g.
+     * `sar dword ptr [ebx], 0c3h'.  value 0..127 and the `,1' short form fall
+     * through to the normal path unchanged.
+     */
+    switch( Code->info.token ) {
+    case T_SAR: case T_SHL: case T_SHR: case T_SAL:
+    case T_ROL: case T_ROR: case T_RCL: case T_RCR:
+        if( ( value > SCHAR_MAX ) && ( value <= UCHAR_MAX ) ) {
+            Code->info.opnd_type[Opnd_Count] = OP_I8;
+            return( RC_OK );
+        }
+        break;
+    default:
+        break;
+    }
+
     switch( Code->mem_type ) {
     case MT_EMPTY:
         if( Code->info.token == T_PUSH ) {
@@ -1477,6 +1497,20 @@ static bool idata_nofixup( expr_list *opndx )
             if( (int_8)value == (int_32)value ) {
                 op_type = OP_I8;
             }
+            break;
+        } else if( ( Code->info.token == T_RET
+                  || Code->info.token == T_RETN
+                  || Code->info.token == T_RETD
+                  || Code->info.token == T_RETF )
+                && ( value > SHRT_MAX ) && ( value <= USHRT_MAX ) ) {
+            /*
+             * RET/RETF stack-adjust is an UNSIGNED imm16 (C2/CA iw).  MASM does
+             * not treat it as signed, so 0C4C3h is I16, not I32 -- without this
+             * `ret 0c4c3h' (seen in the reconstructed VxDs) was E040.  Only the
+             * 8000h..FFFFh range is redirected; smaller values use the generic
+             * path (which the imm16 form already accepts).
+             */
+            op_type = OP_I16;
             break;
         }
         /* fall through */
@@ -2890,6 +2924,15 @@ static bool check_size( void )
     case T_CVTSS2SI:
     case T_CVTTSS2SI:
     case T_MOVNTI:
+        break;
+    case T_BOUND:
+        /*
+         * BOUND r16/r32, m16&16/m32&32: the memory operand is deliberately
+         * TWICE the register width (a lower/upper bound pair), so MASM writes it
+         * as `bound eax, qword ptr [..]' (32-bit reg, 64-bit mem).  The generic
+         * same-size check below would wrongly reject that -- skip it; the
+         * encoding is driven by the register/operand-size, not the mem size.
+         */
         break;
     case T_MOVD:
 #if 0

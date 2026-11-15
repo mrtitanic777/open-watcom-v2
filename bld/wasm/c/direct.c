@@ -493,31 +493,53 @@ void *pop( void *stk )
 
 static bool push_seg( dir_node_handle seg )
 /******************************************
- * Push a segment into the current segment stack
+ * Push a segment onto the current segment stack.
+ *
+ * MASM permits the same segment to be (re)opened while it is already the
+ * current segment -- this is the standard VxD DDK idiom, where code is wrapped
+ * in an explicit VxD_LOCKED_CODE_SEG/ENDS block and BeginProc <..>, LOCKED then
+ * opens that same locked segment again for the procedure.  Rather than stacking
+ * a duplicate entry for the same segment (which corrupts LEDATA output on
+ * close), record the reopen as a nesting count on the existing top entry.  Each
+ * matching ENDS decrements the count and only the outermost one actually pops.
  */
 {
-    seg_list    *curr;
+    seg_list    *node;
 
-    for( curr = CurrSeg; curr != NULL; curr = curr->next ) {
-        if( curr->seg == seg ) {
-            AsmError( BLOCK_NESTING_ERROR );
-            return( RC_ERROR );
-        }
+    if( CurrSeg != NULL && CurrSeg->seg == seg ) {
+        CurrSeg->nesting++;
+        return( RC_OK );
     }
-    push( &CurrSeg, seg );
+    node = MemAllocSafe( sizeof( *node ) );
+    node->next = CurrSeg;
+    node->seg = seg;
+    node->nesting = 0;
+    CurrSeg = node;
     SetAssumeCSCurrSeg();
     return( RC_OK );
 }
 
 static dir_node_handle pop_seg( void )
 /*************************************
- * Pop a segment out of the current segment stack
+ * Pop a segment out of the current segment stack.
+ *
+ * A nested reopen of the same segment (see push_seg) is matched here by
+ * decrementing the nesting count without removing the entry, so the segment
+ * stays current until its outermost ENDS.
  */
 {
     dir_node_handle seg;
+    seg_list        *node;
 
     /**/myassert( CurrSeg != NULL );
-    seg = pop( &CurrSeg );
+    if( CurrSeg->nesting > 0 ) {
+        CurrSeg->nesting--;
+        return( CurrSeg->seg );
+    }
+    node = CurrSeg;
+    seg = node->seg;
+    CurrSeg = node->next;
+    MemFree( node );
     SetAssumeCSCurrSeg();
     return( seg );
 }
@@ -598,6 +620,7 @@ void dir_init( dir_node_handle dir, table_type tab )
         dir->e.constinfo->tokens = NULL;
         dir->e.constinfo->count = 0;
         dir->e.constinfo->predef = false;
+        dir->e.constinfo->main_file = false;
         return;
     case TAB_PROC:
         dir->sym.state = SYM_PROC;
@@ -708,7 +731,7 @@ static table_type get_dir_tab( dir_node_handle dir )
     return( tab );
 }
 
-static dir_node_handle dir_reset( dir_node_handle dir )
+dir_node_handle dir_reset( dir_node_handle dir )
 /*****************************************************/
 {
     if( dir->prev != NULL
@@ -734,6 +757,23 @@ static dir_node_handle dir_reset( dir_node_handle dir )
         }
     }
     return( dir->next );
+}
+
+void dir_requeue( dir_node_handle dir )
+/**************************************
+ * Re-link a node previously removed via dir_reset back into its type queue.
+ * Used to restore macros PURGEd on an earlier pass: wasm persists symbols
+ * across passes and skips include-guarded includes on pass 2 (e.g. VMM.INC's
+ * `ifndef _VMM_ ... endif`), so a macro purged during pass 1 would otherwise be
+ * gone on pass 2 because its guarded definition is never re-read.
+ */
+{
+    table_type      tab;
+
+    tab = get_dir_tab( dir );
+    if( tab != TAB_NONE ) {
+        dir_add( dir, tab );
+    }
 }
 
 void dir_to_sym( dir_node_handle dir )
@@ -1584,9 +1624,42 @@ bool SegDef( token_buffer *tokbuf, token_idx i )
              */
             token = tokbuf->tokens[i].string_ptr;
             /*
+             * MASM 6 flat-model segment use-type: `SEGMENT ... FLAT ...'
+             * (the Win95 DDK's `_FLAT EQU FLAT' under IFDEF MASM6). Treat it
+             * as USE32 -- a 32-bit flat segment -- so DDK VMM.INC assembles.
+             */
+            if( stricmp( token, "FLAT" ) == 0 ) {
+                new_info->use32 = true;
+                continue;
+            }
+            /*
              * look up the type of token
              */
             type = token_cmp( token, TOK_READONLY, TOK_AT );
+            if( type == TOK_INVALID ) {
+                /*
+                 * An EQU alias to a use-type keyword (the Win95 DDK's
+                 * `_FLAT EQU USE32', used as `SEGMENT ... _FLAT ...') is not
+                 * expanded in this directive-operand position, so resolve it
+                 * here: a single-token SYM_CONST whose token names a segment
+                 * option is treated as that option.
+                 */
+                asm_sym_handle  asym;
+
+                asym = AsmGetSymbol( token );
+                if( asym != NULL && asym->state == SYM_CONST ) {
+                    dir_node_handle adir = (dir_node_handle)asym;
+                    if( adir->e.constinfo->count == 1
+                      && adir->e.constinfo->tokens[0].string_ptr != NULL ) {
+                        const char *alias = adir->e.constinfo->tokens[0].string_ptr;
+                        if( stricmp( alias, "FLAT" ) == 0 ) {  /* _FLAT EQU FLAT */
+                            new_info->use32 = true;
+                            continue;
+                        }
+                        type = token_cmp( alias, TOK_READONLY, TOK_AT );
+                    }
+                }
+            }
             if( type == TOK_INVALID ) {
                 AsmError( UNDEFINED_SEGMENT_OPTION );
                 goto error;

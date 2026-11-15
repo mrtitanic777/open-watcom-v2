@@ -1321,6 +1321,14 @@ void WriteObjModule( void )
             break;
         writepass1stuff( name );
         ++Parse_Pass;
+        /* restore macros PURGEd on the previous pass: include guards (e.g.
+         * VMM.INC's `ifndef _VMM_`) stop their definitions being re-read, so
+         * without this a purged macro stays gone on every later pass */
+        AsmRestorePurgedMacros();
+        /* drop user EQU/= constants so the source re-scan re-establishes them in
+         * order (MASM rebuilds symbols each pass); fixes order-dependent IFDEFs
+         * like Create_..._Service_Table diverging between passes */
+        AsmResetPassConstants();
         rewind( AsmFiles.fp[ASM] );
         reset_seg_len();
         BufSize = 0;

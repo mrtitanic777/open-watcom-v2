@@ -133,10 +133,13 @@ static bool output( const asm_ins ASMI86FAR *ins )
     if( rCode->prefix.ins != T_NULL ) {
         switch( rCode->prefix.ins ) {
         case T_LOCK:
-            if( ins->allowed_prefix != LOCK ) {
-                AsmError( LOCK_PREFIX_IS_NOT_ALLOWED_ON_THIS_INSTRUCTION );
-                return( RC_ERROR );
-            }
+            /*
+             * MASM (ML 6.x) emits the F0 LOCK prefix for any `lock' the source
+             * writes -- it does not enforce Intel's "destination must be memory"
+             * rule.  wasm's stricter check rejected forms MASM accepts (e.g.
+             * `lock and eax, [eax]', where memory is the source), which appear
+             * in the reconstructed VxDs.  Match MASM: emit the prefix regardless.
+             */
             break;
         case T_REP:
             if( ins->allowed_prefix != REP ) {

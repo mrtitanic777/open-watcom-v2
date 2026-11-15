@@ -438,7 +438,9 @@ common_flags_compr = -gz
 ! else ifdef __GCC_TOOLS__
 !  ifdef __OSX__
 !  else
-common_flags_compr = -gz
+# this MinGW gcc rejects -gz ("not supported in this configuration"); omit it (debug
+# info just stays uncompressed) so host build-tools (mkopcode, ...) link.
+common_flags_compr =
 !  endif
 ! endif
 

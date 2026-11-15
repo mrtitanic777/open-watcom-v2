@@ -534,6 +534,7 @@ static token_idx array_element( asm_sym_handle sym, asm_sym_handle struct_sym, t
             asmfixup            *fixup;
 
             if( tokbuf->tokens[cur_pos].u.token == T_OFFSET ||
+                tokbuf->tokens[cur_pos].u.token == T_OFFSET32 ||
                 tokbuf->tokens[cur_pos].u.token == T_SEG ) {
                 // see asmins.h about T_SEG
                 if( no_of_bytes < 2 ) {
@@ -563,7 +564,8 @@ static token_idx array_element( asm_sym_handle sym, asm_sym_handle struct_sym, t
                     if( init_sym == NULL )
                         return( INVALID_IDX );
 
-                    if( tokbuf->tokens[seg_off_operator_loc].u.token == T_OFFSET ) {
+                    if( tokbuf->tokens[seg_off_operator_loc].u.token == T_OFFSET
+                      || tokbuf->tokens[seg_off_operator_loc].u.token == T_OFFSET32 ) {
                         if( init_sym->state == SYM_STACK ) {
                             AsmError( CANNOT_OFFSET_AUTO );
                             return( INVALID_IDX );
@@ -600,6 +602,7 @@ static token_idx array_element( asm_sym_handle sym, asm_sym_handle struct_sym, t
                     }
 
                     switch( tokbuf->tokens[seg_off_operator_loc].u.token ) {
+                    case T_OFFSET32:
                     case T_OFFSET:
 #if defined( _STANDALONE_ )
                         if( init_sym->state == SYM_STRUCT_FIELD ) {
@@ -613,7 +616,8 @@ static token_idx array_element( asm_sym_handle sym, asm_sym_handle struct_sym, t
 #endif
                         fixup = AddFixup( init_sym, fixup_type, OPTJ_NONE );
                         InsFixups[OPND1] = fixup;
-                        if( tokbuf->tokens[seg_off_operator_loc].u.token == T_OFFSET ) {
+                        if( tokbuf->tokens[seg_off_operator_loc].u.token == T_OFFSET
+                          || tokbuf->tokens[seg_off_operator_loc].u.token == T_OFFSET32 ) {
                             data += fixup->u_offset;
                         }
 #if defined( _STANDALONE_ )

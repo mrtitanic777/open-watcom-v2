@@ -959,6 +959,7 @@ ins (T_NOT,             OP_M_DW,     0,      OP_NONE,       OP3_NONE,0,  0,     
 ins (T_NOT,             OP_M_W,      0,      OP_NONE,       OP3_NONE,0,  0,      0,  0xF7,     0x10,                     P_86,        LOCK)
 insa(T_NOWARN,          OP_SPECIAL,  0,      0,             0,       0,  0,      0,  0,        OP_DIRECTIVE,             0,           0)
 ins (T_OFFSET,          OP_SPECIAL,  0,      0,             0,       0,  0,      0,  0,        OP_UNARY_OPERATOR,        0,           0)
+ins (T_OFFSET32,        OP_SPECIAL,  0,      0,             0,       0,  0,      0,  0,        OP_UNARY_OPERATOR,        0,           0)
 insa(T_OPATTR,          OP_SPECIAL,  0,      OP_NONE,       0,       0,  0,      0,  0,        OP_DIRECTIVE,             0,           0)
 insa(T_OPTION,          OP_SPECIAL,  0,      OP_NONE,       0,       0,  0,      0,  0,        OP_DIRECTIVE,             0,           0)
 ins (T_OR,              OP_R1632,    0,      OP_I8,         OP3_NONE,0,  0,      0,  0x83,     0x08,                     P_86,        0)

@@ -85,6 +85,7 @@ bool StructDef( token_buffer *tokbuf, token_idx i )
     switch( tokbuf->tokens[i].u.token ) {
     case T_STRUC:
     case T_STRUCT:
+    case T_UNION:
         dir = (dir_node_handle)AsmGetSymbol( name );
         if( Parse_Pass == PASS_1 ) {
             if( dir == NULL ) {
@@ -100,6 +101,16 @@ bool StructDef( token_buffer *tokbuf, token_idx i )
                 AsmError( SYMBOL_ALREADY_DEFINED );
                 return( RC_ERROR );
             }
+        }
+        /*
+         * MASM UNION: like STRUCT but members overlap at offset 0 and the union's
+         * size is the largest member. Marked here; AddFieldToStruct places each
+         * field at 0, and T_ENDS sets the final size to the max seen. (DDK vmd.inc
+         * SMALLCURSOR UNION, etc.)
+         */
+        if( Parse_Pass == PASS_1 && dir->e.structinfo != NULL ) {
+            dir->e.structinfo->is_union = ( tokbuf->tokens[i].u.token == T_UNION );
+            dir->e.structinfo->max_size = 0;
         }
         /* even if the current is null */
         push( &Definition.struct_stack, Definition.curr_struct );
@@ -122,6 +133,15 @@ bool StructDef( token_buffer *tokbuf, token_idx i )
         if( Definition.curr_struct != NULL
           && strcmp( name, Definition.curr_struct->sym.name ) == 0 ) {
             /* this is the right struct ... so end it */
+            if( Definition.curr_struct->e.structinfo != NULL
+              && Definition.curr_struct->e.structinfo->is_union ) {
+                /* finalize the union: size = largest member (incl. the last one) */
+                struct_info *u = Definition.curr_struct->e.structinfo;
+                if( u->size > u->max_size )
+                    u->max_size = u->size;
+                u->size = u->max_size;
+                Definition.curr_struct->sym.total_size = u->max_size;
+            }
             Definition.curr_struct = pop( &Definition.struct_stack );
             Definition.struct_depth--;
         } else {
@@ -130,6 +150,63 @@ bool StructDef( token_buffer *tokbuf, token_idx i )
         }
     }
     return( RC_OK );
+}
+
+/*
+ * A struct field defined as a string literal, e.g.  DDB_Name  DB "        " ,
+ * has a fixed byte width equal to that literal's character count.  MASM pads a
+ * shorter string override up to that width with spaces (so "VKD" in an 8-char
+ * name field emits "VKD     ").  wasm previously emitted only the override's own
+ * length, shifting every following field -- which silently corrupts fixed-layout
+ * structures such as the VxD Device Descriptor Block.  These helpers restore the
+ * MASM padding: a value is padded only when both the field default and the
+ * override are plain string literals and the override is shorter.
+ *
+ * Returns the literal's content length (chars inside the delimiters) and, via
+ * *content, a pointer to the first content char; (size_t)-1 if s is not a single
+ * "..." / '...' / <...> string literal.  Trailing whitespace is trimmed first
+ * because a stored default value carries a trailing separator space.
+ */
+static size_t str_lit_content_len( const char *s, size_t len, const char **content )
+{
+    while( len > 0 && isspace( (unsigned char)s[len - 1] ) )
+        len--;
+    if( len >= 2
+      && ( ( s[0] == '"'  && s[len - 1] == '"'  )
+        || ( s[0] == '\'' && s[len - 1] == '\'' )
+        || ( s[0] == '<'  && s[len - 1] == '>'  ) ) ) {
+        if( content != NULL )
+            *content = s + 1;
+        return( len - 2 );
+    }
+    return( (size_t)-1 );
+}
+
+/*
+ * Emit a field's override value into p, padding a short string literal up to the
+ * default literal's width (MASM behaviour).  Falls back to a plain copy for any
+ * value that is not a paddable string literal.
+ */
+static char *emit_field_value( char *p, const char *ovr, size_t ovrlen, const char *deflt )
+{
+    const char  *ovrc;
+    size_t      ovrn;
+    size_t      defn;
+    char        open;
+
+    ovrn = str_lit_content_len( ovr, ovrlen, &ovrc );
+    defn = str_lit_content_len( deflt, strlen( deflt ), NULL );
+    if( ovrn != (size_t)-1 && defn != (size_t)-1 && ovrn < defn ) {
+        open = ovrc[-1];
+        *p++ = open;
+        memcpy( p, ovrc, ovrn );
+        p += ovrn;
+        while( ovrn++ < defn )
+            *p++ = ' ';
+        *p++ = ( open == '<' ) ? '>' : open;
+        return( p );
+    }
+    return( CATSTR( p, ovr, ovrlen ) );
 }
 
 bool InitializeStructure( asm_sym_handle sym, asm_sym_handle struct_symbol, token_buffer *tokbuf, token_idx i )
@@ -187,7 +264,7 @@ bool InitializeStructure( asm_sym_handle sym, asm_sym_handle struct_symbol, toke
                 p = CATSTR( p, f->value, len );
             } else {
                 len = ptr2 - ptr1;
-                p = CATSTR( p, ptr1, len );
+                p = emit_field_value( p, ptr1, len, f->value );
             }
             ptr = ptr2 + 1;   // go past the comma
         } else {
@@ -197,7 +274,7 @@ bool InitializeStructure( asm_sym_handle sym, asm_sym_handle struct_symbol, toke
                 p = CATSTR( p, f->value, len );
             } else {
                 len = strlen( ptr );
-                p = CATSTR( p, ptr, len );
+                p = emit_field_value( p, ptr, len, f->value );
             }
             ptr = NULL;
         }
@@ -218,7 +295,17 @@ int AddFieldToStruct( asm_sym_handle sym, token_buffer *tokbuf, token_idx loc )
 
     the_struct = Definition.curr_struct->e.structinfo;
 
-    offset = the_struct->size; // offset of this element
+    /*
+     * UNION: every member starts at offset 0 and the members overlap. The prior
+     * member's accrued size becomes a candidate for the union's max; reset the
+     * running size to 0 so this member also starts at 0.
+     */
+    if( the_struct->is_union ) {
+        if( the_struct->size > the_struct->max_size )
+            the_struct->max_size = the_struct->size;
+        the_struct->size = 0;
+    }
+    offset = the_struct->size; // offset of this element (0 for a union member)
 
     f = MemAllocSafe( sizeof( field_list ) );
 

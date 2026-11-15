@@ -106,6 +106,9 @@ extern void             FreeASym( asm_sym_handle sym );
 #if defined( _STANDALONE_ )
 
 extern void             AsmTakeOut( const char *name );
+extern void             AsmPurgeMacro( const char *name );
+extern void             AsmRestorePurgedMacros( void );
+extern void             AsmResetPassConstants( void );
 extern bool             AsmChangeName( const char *old, const char *new );
 extern void             AsmSetMandatoryName( asm_sym_handle sym, const char *name );
 extern void             WriteListing( void );

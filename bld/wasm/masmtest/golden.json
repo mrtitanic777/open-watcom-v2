@@ -1,0 +1,32 @@
+{
+ "data_basic.asm": {
+  "rc": 0,
+  "sha1": "9f4fc7ec47a485d6368a7d27fcccbaa5cd701657",
+  "size": 321
+ },
+ "equ_chain.asm": {
+  "rc": 0,
+  "sha1": "0ce04a2ce8417a827c66cc55733334a8ef8b547b",
+  "size": 324
+ },
+ "equ_expr.asm": {
+  "rc": 0,
+  "sha1": "357d075c94ea93ed71cb653ac56ee69a9e75fc8b",
+  "size": 322
+ },
+ "equ_label.asm": {
+  "rc": 0,
+  "sha1": "aae4b84d9932a0b47eaa3f5e0ef60c40323f9cbb",
+  "size": 322
+ },
+ "equ_numeric.asm": {
+  "rc": 0,
+  "sha1": "13ca657a13757a6f58996a51f14e225a1edfaf12",
+  "size": 333
+ },
+ "seg_basic.asm": {
+  "rc": 0,
+  "sha1": "9490091bcbe735aea0ddd6eac23b4ba55fb5dae8",
+  "size": 329
+ }
+}
